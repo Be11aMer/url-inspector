@@ -1,0 +1,1 @@
+"""URL Inspector application package."""
