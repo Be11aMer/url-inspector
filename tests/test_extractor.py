@@ -217,7 +217,8 @@ class TestRawBytesInput:
     """extract_metadata accepts bytes, including bytes with encoding declarations."""
 
     def test_utf8_bytes(self):
-        html = "<!DOCTYPE html><html><head><title>UTF-8 Título</title></head></html>".encode("utf-8")
+        # charset meta tag required so lxml decodes bytes as UTF-8, not Latin-1
+        html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>UTF-8 Título</title></head></html>'.encode("utf-8")
         result = extract_metadata(html)
         assert result.title == "UTF-8 Título"
 
