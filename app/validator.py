@@ -2,7 +2,6 @@
 
 import ipaddress
 import socket
-import sys
 from urllib.parse import urlparse
 
 
