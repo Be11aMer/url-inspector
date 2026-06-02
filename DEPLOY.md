@@ -2,19 +2,15 @@
 
 **Platform:** Render (free tier)  
 **Deploy method:** Docker container  
-**Public URL:** _To be filled in by PM after Render service creation_
+**Public URL:** https://url-inspector-t6tm.onrender.com
 
 ---
 
 ## Public Render URL
 
 ```
-https://url-inspector.onrender.com
+https://url-inspector-t6tm.onrender.com
 ```
-
-> **Note:** Replace the URL above with the actual URL from the Render dashboard after the service is created.
-> Render-assigned hostnames follow the pattern `https://<service-name>.onrender.com`.
-> If the name `url-inspector` is taken, Render will assign a suffix (e.g., `url-inspector-abc1`).
 
 ---
 
@@ -67,10 +63,6 @@ The CI runs `ruff check .` and `pytest tests/` on every push.
 - Watch the build log in the Render dashboard for any errors.
 - The service is ready when the status shows **Live**.
 
-### 4. Update this file
-
-Once deployed, replace the placeholder URL above with the actual Render URL shown in the dashboard.
-
 ---
 
 ## Post-Deployment Verification
@@ -80,32 +72,32 @@ Run each check after the service is live. All must pass before marking TASK-008 
 ### Health check
 
 ```bash
-curl -s https://<render-url>/health
+curl -s https://url-inspector-t6tm.onrender.com/health
 # Expected: {"status":"ok"}
 ```
 
 ### Frontend
 
-Open `https://<render-url>/` in a browser. The URL Inspector page must load without errors.
+Open `https://url-inspector-t6tm.onrender.com/` in a browser. The URL Inspector page must load without errors.
 
 ### Metadata fetch (valid public URL)
 
 ```bash
-curl -s -X POST https://<render-url>/api/inspect \
+curl -s -X POST https://url-inspector-t6tm.onrender.com/api/inspect \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com"}' | python3 -m json.tool
-# Expected: HTTP 200, title field is non-null
+# Expected: HTTP 200, title field is non-null ("Example Domain")
 ```
 
 ### SSRF rejection
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}" -X POST https://<render-url>/api/inspect \
+curl -s -o /dev/null -w "%{http_code}" -X POST https://url-inspector-t6tm.onrender.com/api/inspect \
   -H "Content-Type: application/json" \
   -d '{"url": "http://127.0.0.1"}'
 # Expected: 422
 
-curl -s -X POST https://<render-url>/api/inspect \
+curl -s -X POST https://url-inspector-t6tm.onrender.com/api/inspect \
   -H "Content-Type: application/json" \
   -d '{"url": "http://127.0.0.1"}' | python3 -m json.tool
 # Expected: {"error": "Forbidden Target", "error_detail": "..."}
@@ -126,7 +118,7 @@ curl -s -X POST https://<render-url>/api/inspect \
 
 ## Redeployment
 
-Render auto-deploys on every push to `main` (configured in the Render dashboard).
+Render auto-deploys on every push to the tracked branch (configured in the Render dashboard).
 No manual action required for subsequent deploys after initial service creation.
 
 To trigger a manual redeploy: **Render dashboard → url-inspector → Manual Deploy → Deploy latest commit**.
