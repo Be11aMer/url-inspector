@@ -70,8 +70,3 @@ class TestDnsFailure:
             with pytest.raises(ValidationError) as exc_info:
                 validate_url("http://this-host-does-not-exist.invalid")
         assert exc_info.value.error_code == "DNS Failure"
-
-
-def test_deliberate_failure_for_ci_test():
-    """Deliberate failing test to verify CI catches test failures. Reverted after verification."""
-    assert 1 == 2, "deliberate failure"
