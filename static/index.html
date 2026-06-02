@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>URL Inspector</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='none'%3E%3Ccircle cx='13' cy='13' r='8' stroke='%232563eb' stroke-width='3'/%3E%3Cline x1='19' y1='19' x2='27' y2='27' stroke='%232563eb' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -97,6 +98,25 @@
     }
 
     .spinner.visible { display: block; }
+
+    /* Empty state */
+    #empty-state {
+      margin-top: 3rem;
+      text-align: center;
+      color: #9ca3af;
+    }
+
+    #empty-state svg {
+      display: block;
+      margin: 0 auto 1rem;
+      opacity: 0.35;
+    }
+
+    #empty-state p {
+      font-size: 0.95rem;
+    }
+
+    #empty-state.hidden { display: none; }
 
     /* Results area */
     #results {
@@ -237,18 +257,27 @@
       </button>
     </form>
 
+    <div id="empty-state" aria-hidden="true">
+      <svg width="48" height="48" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="13" cy="13" r="8" stroke="#6b7280" stroke-width="2.5"/>
+        <line x1="19" y1="19" x2="27" y2="27" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      <p>Enter a URL above to inspect its metadata.</p>
+    </div>
+
     <section id="results" aria-live="polite">
       <!-- populated by JS -->
     </section>
   </main>
 
   <script>
-    const form     = document.getElementById('inspect-form');
-    const input    = document.getElementById('url-input');
-    const btn      = document.getElementById('submit-btn');
-    const spinner  = document.getElementById('spinner');
-    const btnLabel = document.getElementById('btn-label');
-    const results  = document.getElementById('results');
+    const form       = document.getElementById('inspect-form');
+    const input      = document.getElementById('url-input');
+    const btn        = document.getElementById('submit-btn');
+    const spinner    = document.getElementById('spinner');
+    const btnLabel   = document.getElementById('btn-label');
+    const results    = document.getElementById('results');
+    const emptyState = document.getElementById('empty-state');
 
     let busy = false;
 
@@ -274,6 +303,7 @@
       setLoading(true);
       results.classList.remove('visible');
       results.innerHTML = '';
+      emptyState.classList.add('hidden');
 
       try {
         const response = await fetch('/api/inspect', {
@@ -369,11 +399,12 @@
     /* ------------------------------------------------------------------ */
 
     function renderSuccess(d) {
-      const redirectSection = d.redirect_chain && d.redirect_chain.length > 0
-        ? `<div class="section-block">
-             ${sectionHeading('Redirect Chain')}
-             ${renderRedirectHops(d.redirect_chain)}
-           </div>`
+      const redirectRows = d.redirect_chain && d.redirect_chain.length > 0
+        ? `<tr><th>Redirect Chain</th><td>${renderRedirectHops(d.redirect_chain)}</td></tr>`
+        : '';
+
+      const excessiveBadge = d.redirect_excessive
+        ? `<span class="status-badge error">excessive</span>`
         : '';
 
       results.innerHTML = `
@@ -381,16 +412,12 @@
 
           ${sectionHeading('Basic')}
           <table class="field-table">
-            ${fieldRow('URL Submitted',    val(d.url_submitted))}
-            ${fieldRow('Final URL',        val(d.final_url))}
-            ${fieldRow('Status Code',      d.status_code != null ? statusBadge(d.status_code) + ' ' + d.status_code : val(null))}
-            ${fieldRow('Content-Type',     val(d.content_type))}
-            ${fieldRow('Title',            val(d.title))}
-            ${fieldRow('Description',      val(d.meta_description))}
-            ${fieldRow('Canonical URL',    val(d.canonical_url))}
+            ${fieldRow('URL Submitted', val(d.url_submitted))}
+            ${fieldRow('Final URL',     val(d.final_url))}
+            ${fieldRow('Title',         val(d.title))}
+            ${fieldRow('Description',   val(d.meta_description))}
+            ${fieldRow('Canonical URL', val(d.canonical_url))}
           </table>
-
-          ${redirectSection}
 
           <div class="section-block">
             ${sectionHeading('Open Graph')}
@@ -410,6 +437,16 @@
               ${fieldRow('twitter:title',       val(d.twitter?.title))}
               ${fieldRow('twitter:description', val(d.twitter?.description))}
               ${fieldRow('twitter:image',       val(d.twitter?.image))}
+            </table>
+          </div>
+
+          <div class="section-block">
+            ${sectionHeading('Technical')}
+            <table class="field-table">
+              ${fieldRow('HTTP Status',   d.status_code != null ? statusBadge(d.status_code) + ' ' + d.status_code : val(null))}
+              ${fieldRow('Content-Type',  val(d.content_type))}
+              ${redirectRows}
+              ${d.redirect_excessive ? fieldRow('Redirects', excessiveBadge + ' Redirect limit exceeded') : ''}
             </table>
           </div>
 
