@@ -2,9 +2,427 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>URL Inspector</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f5f5;
+      color: #1a1a1a;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    header p {
+      color: #555;
+      margin-top: 0.4rem;
+      font-size: 0.95rem;
+    }
+
+    main {
+      max-width: 740px;
+      margin: 0 auto;
+    }
+
+    .search-form {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    #url-input {
+      flex: 1;
+      padding: 0.65rem 0.9rem;
+      font-size: 1rem;
+      border: 1.5px solid #ccc;
+      border-radius: 6px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #url-input:focus {
+      border-color: #2563eb;
+    }
+
+    #submit-btn {
+      padding: 0.65rem 1.25rem;
+      font-size: 1rem;
+      font-weight: 600;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+
+    #submit-btn:hover:not(:disabled) {
+      background: #1d4ed8;
+    }
+
+    #submit-btn:disabled {
+      background: #93c5fd;
+      cursor: not-allowed;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .spinner.visible { display: block; }
+
+    /* Results area */
+    #results {
+      display: none;
+      margin-top: 2rem;
+    }
+
+    #results.visible { display: block; }
+
+    /* Error banner */
+    .error-banner {
+      background: #fef2f2;
+      border: 1.5px solid #fca5a5;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+    }
+
+    .error-banner h2 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #b91c1c;
+      margin-bottom: 0.35rem;
+    }
+
+    .error-banner p {
+      color: #7f1d1d;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    /* Metadata card */
+    .metadata-card {
+      background: #fff;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .section-heading {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #6b7280;
+      padding: 0.85rem 1.25rem 0.5rem;
+      border-bottom: 1px solid #f3f4f6;
+    }
+
+    .field-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .field-table tr {
+      border-bottom: 1px solid #f3f4f6;
+    }
+
+    .field-table tr:last-child {
+      border-bottom: none;
+    }
+
+    .field-table th {
+      width: 38%;
+      padding: 0.6rem 1.25rem;
+      text-align: left;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #6b7280;
+      vertical-align: top;
+    }
+
+    .field-table td {
+      padding: 0.6rem 1.25rem 0.6rem 0;
+      font-size: 0.85rem;
+      color: #1a1a1a;
+      word-break: break-all;
+      vertical-align: top;
+    }
+
+    .null-value {
+      color: #9ca3af;
+    }
+
+    .section-block {
+      border-top: 1.5px solid #e5e7eb;
+    }
+
+    /* Redirect chain list */
+    .redirect-list {
+      list-style: decimal;
+      padding: 0.75rem 1.25rem 0.75rem 2.75rem;
+      font-size: 0.82rem;
+      line-height: 1.7;
+    }
+
+    .redirect-list li {
+      margin-bottom: 0.15rem;
+    }
+
+    .redirect-url { word-break: break-all; }
+
+    .status-badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 0.05rem 0.4rem;
+      border-radius: 4px;
+      margin-right: 0.4rem;
+      background: #e0e7ff;
+      color: #3730a3;
+      vertical-align: middle;
+    }
+
+    .status-badge.redirect { background: #fef9c3; color: #854d0e; }
+    .status-badge.ok       { background: #dcfce7; color: #166534; }
+    .status-badge.error    { background: #fee2e2; color: #991b1b; }
+  </style>
 </head>
 <body>
-  <p>URL Inspector frontend placeholder.</p>
+  <header>
+    <h1>URL Inspector</h1>
+    <p>Inspect metadata, redirects, and Open Graph tags for any public URL.</p>
+  </header>
+
+  <main>
+    <form class="search-form" id="inspect-form" novalidate>
+      <input
+        type="url"
+        id="url-input"
+        placeholder="https://example.com"
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="URL to inspect"
+      >
+      <button type="submit" id="submit-btn">
+        <span class="spinner" id="spinner" aria-hidden="true"></span>
+        <span id="btn-label">Inspect</span>
+      </button>
+    </form>
+
+    <section id="results" aria-live="polite">
+      <!-- populated by JS -->
+    </section>
+  </main>
+
+  <script>
+    const form     = document.getElementById('inspect-form');
+    const input    = document.getElementById('url-input');
+    const btn      = document.getElementById('submit-btn');
+    const spinner  = document.getElementById('spinner');
+    const btnLabel = document.getElementById('btn-label');
+    const results  = document.getElementById('results');
+
+    let busy = false;
+
+    form.addEventListener('submit', handleSubmit);
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSubmit(e);
+      }
+    });
+
+    async function handleSubmit(e) {
+      e.preventDefault();
+      if (busy) return;
+
+      const url = input.value.trim();
+      if (!url) {
+        input.focus();
+        return;
+      }
+
+      setLoading(true);
+      results.classList.remove('visible');
+      results.innerHTML = '';
+
+      try {
+        const response = await fetch('/api/inspect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          renderError(data);
+        } else {
+          renderSuccess(data);
+        }
+      } catch (err) {
+        renderError({ error: 'Network Error', error_detail: err.message || 'Could not reach the server.' });
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function setLoading(on) {
+      busy = on;
+      btn.disabled = on;
+      spinner.classList.toggle('visible', on);
+      btnLabel.textContent = on ? 'Inspecting…' : 'Inspect';
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Render helpers                                                       */
+    /* ------------------------------------------------------------------ */
+
+    function val(v) {
+      if (v === null || v === undefined || v === '') {
+        return '<span class="null-value">—</span>';
+      }
+      return escHtml(String(v));
+    }
+
+    function escHtml(s) {
+      return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function statusBadge(code) {
+      const cls = code >= 200 && code < 300 ? 'ok'
+                : code >= 300 && code < 400 ? 'redirect'
+                : 'error';
+      return `<span class="status-badge ${cls}">${code}</span>`;
+    }
+
+    function fieldRow(label, value) {
+      return `<tr><th>${escHtml(label)}</th><td>${value}</td></tr>`;
+    }
+
+    function sectionHeading(text) {
+      return `<div class="section-heading">${escHtml(text)}</div>`;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Error renderer                                                       */
+    /* ------------------------------------------------------------------ */
+
+    function renderError(data) {
+      const detail = data.error_detail || '';
+      let extra = '';
+
+      if (data.upstream_status_code != null) {
+        extra += `<p style="margin-top:0.5rem;font-size:0.82rem;color:#7f1d1d;">Upstream status: ${escHtml(String(data.upstream_status_code))}</p>`;
+      }
+      if (data.upstream_content_type) {
+        extra += `<p style="font-size:0.82rem;color:#7f1d1d;">Content-Type: ${escHtml(data.upstream_content_type)}</p>`;
+      }
+      if (data.redirect_chain && data.redirect_chain.length > 0) {
+        extra += renderRedirectHops(data.redirect_chain);
+      }
+
+      results.innerHTML = `
+        <div class="error-banner">
+          <h2>${escHtml(data.error || 'Error')}</h2>
+          ${detail ? `<p>${escHtml(detail)}</p>` : ''}
+          ${extra}
+        </div>`;
+      results.classList.add('visible');
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Success renderer                                                     */
+    /* ------------------------------------------------------------------ */
+
+    function renderSuccess(d) {
+      const redirectSection = d.redirect_chain && d.redirect_chain.length > 0
+        ? `<div class="section-block">
+             ${sectionHeading('Redirect Chain')}
+             ${renderRedirectHops(d.redirect_chain)}
+           </div>`
+        : '';
+
+      results.innerHTML = `
+        <div class="metadata-card">
+
+          ${sectionHeading('Basic')}
+          <table class="field-table">
+            ${fieldRow('URL Submitted',    val(d.url_submitted))}
+            ${fieldRow('Final URL',        val(d.final_url))}
+            ${fieldRow('Status Code',      d.status_code != null ? statusBadge(d.status_code) + ' ' + d.status_code : val(null))}
+            ${fieldRow('Content-Type',     val(d.content_type))}
+            ${fieldRow('Title',            val(d.title))}
+            ${fieldRow('Description',      val(d.meta_description))}
+            ${fieldRow('Canonical URL',    val(d.canonical_url))}
+          </table>
+
+          ${redirectSection}
+
+          <div class="section-block">
+            ${sectionHeading('Open Graph')}
+            <table class="field-table">
+              ${fieldRow('og:title',       val(d.og?.title))}
+              ${fieldRow('og:description', val(d.og?.description))}
+              ${fieldRow('og:image',       val(d.og?.image))}
+              ${fieldRow('og:url',         val(d.og?.url))}
+              ${fieldRow('og:type',        val(d.og?.type))}
+            </table>
+          </div>
+
+          <div class="section-block">
+            ${sectionHeading('Twitter Card')}
+            <table class="field-table">
+              ${fieldRow('twitter:card',        val(d.twitter?.card))}
+              ${fieldRow('twitter:title',       val(d.twitter?.title))}
+              ${fieldRow('twitter:description', val(d.twitter?.description))}
+              ${fieldRow('twitter:image',       val(d.twitter?.image))}
+            </table>
+          </div>
+
+        </div>`;
+      results.classList.add('visible');
+    }
+
+    function renderRedirectHops(chain) {
+      const items = chain.map((hop) =>
+        `<li><span class="redirect-url">${statusBadge(hop.status_code)} ${escHtml(hop.url)}</span></li>`
+      ).join('');
+      return `<ol class="redirect-list">${items}</ol>`;
+    }
+  </script>
 </body>
 </html>
