@@ -1,124 +1,204 @@
 # Deployment: url-inspector
 
-**Platform:** Render (free tier)  
-**Deploy method:** Docker container  
-**Public URL:** https://url-inspector-t6tm.onrender.com
+**Platform:** DigitalOcean App Platform
+**Deploy method:** Docker container, built from the repository `Dockerfile`
+**Spec:** [`.do/app.yaml`](.do/app.yaml)
+
+The application is a standard container listening on `$PORT` (default `8000`).
+Nothing in it is DigitalOcean-specific — see [Self-hosting](#self-hosting)
+to run the identical image anywhere Docker runs.
+
+> **Public URL:** _set after the first deploy._ App Platform assigns a
+> `*.ondigitalocean.app` hostname; record it here, or replace it with your own
+> domain once DNS is pointed (see [Custom domain](#custom-domain-via-cloudflare)).
 
 ---
 
-## Public Render URL
+## Prerequisites
 
+- A DigitalOcean account
+- [`doctl`](https://docs.digitalocean.com/reference/doctl/how-to/install/)
+  installed and authenticated (`doctl auth init`)
+- The GitHub repository connected to DigitalOcean, so App Platform can pull
+  source and redeploy on push
+
+---
+
+## Deploying
+
+`.do/app.yaml` is the source of truth for the service definition. Prefer
+applying it over configuring the app by hand in the control panel — panel edits
+that are not mirrored back into the file drift silently.
+
+### First deploy
+
+```bash
+doctl apps create --spec .do/app.yaml
 ```
-https://url-inspector-t6tm.onrender.com
+
+The command returns an app ID. The first build takes roughly 3–5 minutes:
+DigitalOcean clones the repository, builds the `Dockerfile`, and starts the
+container. Watch progress with:
+
+```bash
+doctl apps logs <app-id> --type build --follow
+```
+
+The app is ready when `doctl apps get <app-id>` reports the active deployment
+phase as `ACTIVE`.
+
+### Subsequent deploys
+
+`deploy_on_push: true` is set in the spec, so every push to `main` triggers an
+automatic rebuild. No manual step is needed.
+
+To force a redeploy without a new commit:
+
+```bash
+doctl apps create-deployment <app-id>
+```
+
+### Changing the spec
+
+Edit `.do/app.yaml`, commit it, then apply:
+
+```bash
+doctl apps update <app-id> --spec .do/app.yaml
+```
+
+To pull the live spec back down and check for drift:
+
+```bash
+doctl apps spec get <app-id>
 ```
 
 ---
 
-## render.yaml
+## Post-deployment verification
 
-`render.yaml` is committed at the repository root. It defines the service as code:
+Run every check against the deployed URL. Substitute `$APP_URL` for the
+hostname App Platform assigned.
 
-```yaml
-services:
-  - type: web
-    name: url-inspector
-    env: docker
-    plan: free
-    healthCheckPath: /health
-    dockerfilePath: ./Dockerfile
+```bash
+export APP_URL="https://your-app.ondigitalocean.app"
 ```
-
----
-
-## PM Steps to Deploy
-
-These steps require access to the Render dashboard. They cannot be automated from this repository.
-
-### 1. Confirm CI is green on main
-
-Before creating the Render service, verify the GitHub Actions CI badge in README.md shows passing.
-The CI runs `ruff check .` and `pytest tests/` on every push.
-
-### 2. Create the Render Web Service
-
-1. Log in to [render.com](https://render.com)
-2. Click **New** → **Web Service**
-3. Connect your GitHub account if not already connected
-4. Select the `url-inspector` repository
-5. Configure the service:
-   - **Name:** `url-inspector`
-   - **Region:** Choose nearest to you
-   - **Branch:** `main`
-   - **Runtime:** Docker
-   - **Dockerfile path:** `./Dockerfile`
-   - **Plan:** Free
-6. Under **Advanced**:
-   - **Health Check Path:** `/health`
-7. Click **Create Web Service**
-
-### 3. Wait for first build
-
-- Render will pull the repo, build the Docker image, and start the container.
-- Build typically takes 2–5 minutes on first run.
-- Watch the build log in the Render dashboard for any errors.
-- The service is ready when the status shows **Live**.
-
----
-
-## Post-Deployment Verification
-
-Run each check after the service is live. All must pass before marking TASK-008 done.
 
 ### Health check
 
 ```bash
-curl -s https://url-inspector-t6tm.onrender.com/health
+curl -s "$APP_URL/health"
 # Expected: {"status":"ok"}
 ```
 
+This is the same path App Platform polls (`health_check.http_path` in the
+spec), so a failure here means the platform will also be restarting the
+container.
+
 ### Frontend
 
-Open `https://url-inspector-t6tm.onrender.com/` in a browser. The URL Inspector page must load without errors.
+Open `$APP_URL/` in a browser. The URL Inspector page must load without
+console errors.
 
 ### Metadata fetch (valid public URL)
 
 ```bash
-curl -s -X POST https://url-inspector-t6tm.onrender.com/api/inspect \
+curl -s -X POST "$APP_URL/api/inspect" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com"}' | python3 -m json.tool
-# Expected: HTTP 200, title field is non-null ("Example Domain")
+# Expected: HTTP 200, "title": "Example Domain"
 ```
 
 ### SSRF rejection
 
+The single most important check — this is the app's main security control, and
+it must hold on the deployed instance, not just in tests.
+
 ```bash
-curl -s -o /dev/null -w "%{http_code}" -X POST https://url-inspector-t6tm.onrender.com/api/inspect \
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "$APP_URL/api/inspect" \
   -H "Content-Type: application/json" \
   -d '{"url": "http://127.0.0.1"}'
 # Expected: 422
 
-curl -s -X POST https://url-inspector-t6tm.onrender.com/api/inspect \
+curl -s -X POST "$APP_URL/api/inspect" \
   -H "Content-Type: application/json" \
-  -d '{"url": "http://127.0.0.1"}' | python3 -m json.tool
-# Expected: {"error": "Forbidden Target", "error_detail": "..."}
+  -d '{"url": "http://169.254.169.254"}' | python3 -m json.tool
+# Expected: {"error": "Forbidden Target", ...}
 ```
 
+The second URL is the cloud metadata endpoint. On a container platform, a
+successful fetch of that address would be a credential-disclosure bug, so
+confirm it is rejected before announcing the deployment.
+
 ---
 
-## Known Limitations
+## Custom domain (via Cloudflare)
 
-| Limitation | Impact |
+App Platform serves a `*.ondigitalocean.app` hostname with TLS by default. To
+front it with a domain hosted on Cloudflare:
+
+1. In the DO control panel, open the app → **Settings** → **Domains** → **Add
+   Domain**, and enter the hostname. Choose **"You manage your domain"** so DO
+   does not take over the nameservers.
+2. In Cloudflare DNS, add a `CNAME` record pointing the hostname at the
+   `*.ondigitalocean.app` target DigitalOcean shows.
+3. Set the record to **DNS only** (grey cloud) for the initial certificate
+   issuance. DigitalOcean needs to reach the origin directly to complete the
+   ACME challenge; proxying before issuance will stall it.
+4. Once the certificate is issued and the domain shows as active in DO, switch
+   the record to **Proxied** (orange cloud) if you want Cloudflare's caching
+   and WAF in front.
+5. Set the Cloudflare SSL/TLS mode to **Full (strict)**. App Platform presents
+   a valid certificate, so anything weaker downgrades a working chain for no
+   benefit.
+
+---
+
+## Self-hosting
+
+The image has no dependency on any hosting provider. To run it anywhere:
+
+```bash
+docker build -t url-inspector .
+docker run --rm -p 8000:8000 url-inspector
+```
+
+Then open `http://localhost:8000`.
+
+To bind a different port, set `PORT`:
+
+```bash
+docker run --rm -e PORT=3000 -p 3000:3000 url-inspector
+```
+
+The container runs as an unprivileged user (uid `10001`), needs no volumes, no
+environment configuration, and no network access beyond outbound HTTPS to the
+sites being inspected.
+
+---
+
+## Operational notes
+
+| Note | Detail |
 |---|---|
-| Cold starts | Render free tier spins down after ~15 min of inactivity. First request may take up to 30 s. |
-| Bot-blocking | Sites that detect automated clients return 403 or a bot-detection page. The tool returns what the server returns. |
-| JS-rendered metadata | Metadata injected by JavaScript is not captured. Raw HTML fetch only. Affects SPAs. |
-| 5 MB body cap | Pages larger than 5 MB are rejected with `Response Too Large`. |
+| No rate limiting | `/api/inspect` performs an outbound fetch per request with no throttle. A public instance can be used as a fetch relay. Put a rate limit in front of it (Cloudflare WAF, or an app-level limiter) before advertising the URL widely. |
+| DNS rebinding | `validate_url()` resolves and checks the target, then `httpx` resolves again independently. A hostile DNS server can answer differently across those two lookups. The blocked-range check still stops the common cases. |
+| Bot-blocking | Sites that detect automated clients return 403 or a challenge page. The tool reports what the server returns. |
+| JS-rendered metadata | Metadata injected by JavaScript is not captured — this is a raw HTML fetch. Affects SPAs. |
+| 5 MB body cap | Larger responses are rejected with `Response Too Large`. |
+| Single worker | The container runs `--workers 1`. Scale with `instance_count` in the spec rather than in-container workers, so health checks and restarts stay granular. |
 
 ---
 
-## Redeployment
+## Migrating from Render
 
-Render auto-deploys on every push to the tracked branch (configured in the Render dashboard).
-No manual action required for subsequent deploys after initial service creation.
+This project previously deployed to Render's free tier via `render.yaml`, which
+has been removed. Points of difference worth knowing:
 
-To trigger a manual redeploy: **Render dashboard → url-inspector → Manual Deploy → Deploy latest commit**.
+- **No cold starts.** App Platform's paid instances stay warm. Render's free
+  tier spun down after ~15 minutes, making the first request take up to 30 s.
+  That limitation no longer applies.
+- **Health check path is unchanged** (`/health`), so external monitors keep
+  working.
+- **Decommission the old service** in the Render dashboard once the DO
+  deployment is verified, so pushes to `main` stop triggering builds there and
+  the stale URL stops serving an outdated copy.

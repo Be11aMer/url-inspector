@@ -1,0 +1,44 @@
+# DigitalOcean App Platform specification.
+#
+# This is infrastructure-as-code: it can be applied with `doctl apps create
+# --spec .do/app.yaml`, or edited in the DO control panel and pulled back down
+# with `doctl apps spec get <app-id>`. Keep this file as the source of truth —
+# panel edits that are not mirrored here drift silently.
+#
+# See DEPLOY.md for the full deploy procedure and verification steps.
+name: url-inspector
+region: fra
+
+services:
+  - name: web
+
+    # Built from the repository Dockerfile, not a DO-detected buildpack. The
+    # same image runs anywhere Docker does, which is the point.
+    dockerfile_path: Dockerfile
+    source_dir: /
+
+    github:
+      repo: Be11aMer/url-inspector
+      branch: main
+      deploy_on_push: true
+
+    # App Platform injects $PORT set to this value; the Dockerfile CMD reads it
+    # and falls back to 8000 for a plain `docker run`.
+    http_port: 8000
+
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+
+    # /health returns {"status": "ok"} and touches no external service, so a
+    # failing check means this container is genuinely unhealthy rather than
+    # some upstream site being slow.
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 10
+      period_seconds: 30
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+
+    routes:
+      - path: /

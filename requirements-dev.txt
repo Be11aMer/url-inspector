@@ -1,0 +1,10 @@
+# Development and CI dependencies. Never installed into the production image.
+#
+# Install both layers for local work:
+#   pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+
+ruff==0.9.1
+pytest==9.0.3
+pytest-asyncio==1.4.0
+respx==0.21.1

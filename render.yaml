@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: url-inspector
-    env: docker
-    plan: free
-    healthCheckPath: /health
-    dockerfilePath: ./Dockerfile

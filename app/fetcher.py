@@ -193,3 +193,22 @@ async def fetch_url(url: str) -> FetchResult:
             error="DNS Failure",
             error_detail="Failed to connect to the host.",
         )
+
+    except httpx.HTTPError as exc:
+        # Every remaining transport failure — malformed HTTP from the upstream
+        # server (RemoteProtocolError), a dropped read, an outbound proxy
+        # refusal. Without this, such errors escape fetch_url and FastAPI
+        # renders a bare 500 with a traceback, breaking the structured-error
+        # contract that every other failure path here upholds. Inspecting
+        # arbitrary user-supplied URLs means badly-behaved servers are the
+        # normal case, not the exception.
+        return FetchResult(
+            url_submitted=url_submitted,
+            final_url=current_url,
+            status_code=None,
+            content_type=None,
+            body=None,
+            redirect_chain=redirect_chain,
+            error="Fetch Failed",
+            error_detail=f"The request failed: {type(exc).__name__}.",
+        )

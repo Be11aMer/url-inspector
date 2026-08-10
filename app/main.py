@@ -1,5 +1,7 @@
 """FastAPI application entry point."""
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -16,10 +18,21 @@ from app.models import (
 
 app = FastAPI(title="URL Inspector", version="1.0")
 
+# Resolved from this module's location, not the process working directory.
+# A relative "static/index.html" only works when the server happens to be
+# started from the repository root, which is not guaranteed by every container
+# runtime or process supervisor.
+_STATIC_INDEX = Path(__file__).resolve().parent.parent / "static" / "index.html"
+
 # Error codes that indicate a client-side problem → 422
 _CLIENT_ERRORS = {"Invalid URL", "Forbidden Target"}
 # Error codes that indicate an upstream/server-side problem → 502
-_SERVER_ERRORS = {"DNS Failure", "Excessive Redirects", "Response Too Large"}
+_SERVER_ERRORS = {
+    "DNS Failure",
+    "Excessive Redirects",
+    "Response Too Large",
+    "Fetch Failed",
+}
 # Error codes that indicate a timeout → 504
 _TIMEOUT_ERRORS = {"Connection Timeout"}
 
@@ -37,7 +50,7 @@ async def health() -> JSONResponse:
 @app.get("/")
 async def index() -> FileResponse:
     """Serve the frontend single-page application."""
-    return FileResponse("static/index.html")
+    return FileResponse(_STATIC_INDEX)
 
 
 @app.post("/api/inspect")

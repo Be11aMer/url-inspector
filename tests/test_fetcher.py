@@ -154,6 +154,35 @@ async def test_connection_timeout() -> None:
     assert result.body is None
 
 
+# ---- Other transport failures ----
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
+    "exc",
+    [
+        httpx.RemoteProtocolError("malformed HTTP response"),
+        httpx.ReadError("connection reset while reading"),
+        httpx.ProxyError("403 Forbidden"),
+    ],
+)
+async def test_other_transport_errors_return_fetch_failed(exc: Exception) -> None:
+    """Transport failures other than timeout/connect must not escape fetch_url.
+
+    An uncaught httpx exception here becomes a bare FastAPI 500 with a
+    traceback instead of the structured error envelope every other path
+    returns. Badly-behaved upstream servers are routine for this app.
+    """
+    respx.get("https://broken.example.com/").mock(side_effect=exc)
+    with patch("app.fetcher.validate_url", side_effect=_pass):
+        result = await fetch_url("https://broken.example.com")
+    assert result.error == "Fetch Failed"
+    assert result.status_code is None
+    assert result.body is None
+    assert type(exc).__name__ in (result.error_detail or "")
+
+
 # ---- Content-Length > 5MB ----
 
 

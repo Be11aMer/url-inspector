@@ -111,6 +111,30 @@ def test_dns_failure_returns_502_with_error_detail(client: TestClient) -> None:
     assert body["error_detail"]
 
 
+# ── FR-04: Fetch Failed → 502 ────────────────────────────────────────────────
+
+
+def test_malformed_upstream_response_returns_502_not_500(client: TestClient) -> None:
+    """A malformed HTTP response must produce a structured 502, never a raw 500.
+
+    Regression guard: httpx transport errors other than timeout and connect
+    used to propagate out of fetch_url and surface as an unhandled FastAPI 500.
+    """
+    with respx.mock:
+        respx.get("https://malformed.example.com/").mock(
+            side_effect=httpx.RemoteProtocolError("malformed HTTP response")
+        )
+        with patch("app.fetcher.validate_url", side_effect=_pass):
+            r = client.post(
+                "/api/inspect", json={"url": "https://malformed.example.com"}
+            )
+
+    assert r.status_code == 502
+    body = r.json()
+    assert body["error"] == "Fetch Failed"
+    assert body["error_detail"]
+
+
 # ── FR-04: Connection Timeout → 504 ──────────────────────────────────────────
 
 

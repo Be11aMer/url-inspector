@@ -19,10 +19,45 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        # requirements-dev.txt includes requirements.txt, so this installs both
+        # the runtime and the test/lint layers.
+        run: pip install -r requirements-dev.txt
 
       - name: Lint
         run: ruff check .
 
       - name: Test
         run: pytest tests/
+
+  docker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Dockerfile is the deployment artifact for App Platform, so a broken
+      # build should fail here rather than on DigitalOcean.
+      - name: Build image
+        run: docker build -t url-inspector:ci .
+
+      - name: Verify container serves /health
+        run: |
+          docker run -d --name ci-check -p 8000:8000 url-inspector:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health | grep -q '"ok"'; then
+              echo "health check passed"
+              docker rm -f ci-check
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "container did not become healthy" >&2
+          docker logs ci-check >&2
+          docker rm -f ci-check
+          exit 1
+
+      - name: Verify image does not run as root
+        run: |
+          uid=$(docker run --rm --entrypoint sh url-inspector:ci -c 'id -u')
+          echo "container uid: $uid"
+          test "$uid" != "0"
